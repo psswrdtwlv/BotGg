@@ -11,7 +11,20 @@ from telegram import Bot, error
 SHEET_ID = os.getenv("SHEET_ID")
 CHAT_ID = os.getenv("CHAT_ID")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-CREDENTIALS_JSON = json.loads(os.getenv("CREDENTIALS_JSON"))
+
+# Собираем CREDENTIALS_JSON из отдельных переменных
+CREDENTIALS_JSON = {
+    "type": os.getenv("type"),
+    "project_id": os.getenv("project_id"),
+    "private_key_id": os.getenv("private_key_id"),
+    "private_key": os.getenv("private_key").replace("\\n", "\n"),
+    "client_email": os.getenv("client_email"),
+    "client_id": os.getenv("client_id"),
+    "auth_uri": os.getenv("auth_uri"),
+    "token_uri": os.getenv("token_uri"),
+    "auth_provider_x509_cert_url": os.getenv("auth_provider_x509_cert_url"),
+    "client_x509_cert_url": os.getenv("client_x509_cert_url"),
+}
 
 SENT_DATA_FILE = "sent_data.json"
 
@@ -21,12 +34,16 @@ bot = Bot(token=TELEGRAM_TOKEN)
 # Логирование
 logging.basicConfig(level=logging.INFO)
 
+
 # Авторизация Google Sheets API
 def authorize_google_sheets():
-    creds = Credentials.from_service_account_info(CREDENTIALS_JSON, scopes=["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"])
+    creds = Credentials.from_service_account_info(
+        CREDENTIALS_JSON, scopes=["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    )
     client = gspread.authorize(creds)
     sheet = client.open_by_key(SHEET_ID).sheet1
     return sheet
+
 
 # Парсинг даты
 def safe_parse_date(date_value):
@@ -37,6 +54,7 @@ def safe_parse_date(date_value):
         return parsed_date
     except ValueError:
         return None
+
 
 # Чтение сохраненных данных
 def load_sent_data():
@@ -49,10 +67,12 @@ def load_sent_data():
     except (FileNotFoundError, json.JSONDecodeError):
         return {"sent_today": []}
 
+
 # Сохранение данных
 def save_sent_data(sent_data):
     with open(SENT_DATA_FILE, "w") as file:
         json.dump(sent_data, file, indent=4, default=str)
+
 
 # Получение данных из Google Sheets
 async def get_sheet_data():
@@ -63,6 +83,7 @@ async def get_sheet_data():
         logging.error(f"❌ Ошибка при загрузке данных из Google Sheets: {e}")
         return []
 
+
 # Отправка сообщения в Telegram
 async def send_telegram_message(message):
     try:
@@ -70,6 +91,7 @@ async def send_telegram_message(message):
         logging.info(f"✅ Сообщение отправлено: {message}")
     except error.TelegramError as e:
         logging.error(f"❌ Ошибка при отправке сообщения: {e}")
+
 
 # Проверка и отправка уведомлений
 async def check_and_notify(data, sent_data):
@@ -120,6 +142,7 @@ async def check_and_notify(data, sent_data):
     sent_data["sent_today"].extend(new_notifications)
     save_sent_data(sent_data)
 
+
 # Основной цикл проверки
 async def periodic_check():
     sent_data = load_sent_data()
@@ -135,6 +158,6 @@ async def periodic_check():
         logging.info("🔹 Ожидание 3 минуты перед следующей проверкой...")
         await asyncio.sleep(180)
 
+
 if __name__ == "__main__":
     asyncio.run(periodic_check())
-
