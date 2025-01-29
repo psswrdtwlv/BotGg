@@ -1,0 +1,10 @@
+{
+  "build": {
+    "builder": "DOCKERFILE"
+  },
+  "deploy": {
+    "startCommand": "python3 чат-бот.py",
+    "restartPolicyType": "ALWAYS"
+  }
+}
+
