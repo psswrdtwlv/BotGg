@@ -1,6 +1,5 @@
 import os
 import json
-import base64
 import logging
 import asyncio
 import datetime
@@ -8,48 +7,64 @@ import gspread
 from google.oauth2.service_account import Credentials
 from telegram import Bot, error
 
-# Настройки
+# Включаем логирование
+logging.basicConfig(level=logging.INFO)
+
+# Читаем переменные окружения
 SHEET_ID = os.getenv("SHEET_ID")
 CHAT_ID = os.getenv("CHAT_ID")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+credentials_json = os.getenv("CREDENTIALS_JSON")
 
-# Декодирование CREDENTIALS_JSON из Base64
+# Проверяем переменные окружения
+if not SHEET_ID:
+    logging.error("❌ Ошибка: SHEET_ID не найден!")
+    exit(1)
+if not CHAT_ID:
+    logging.error("❌ Ошибка: CHAT_ID не найден!")
+    exit(1)
+if not TELEGRAM_TOKEN:
+    logging.error("❌ Ошибка: TELEGRAM_TOKEN не найден!")
+    exit(1)
+if not credentials_json:
+    logging.error("❌ Ошибка: CREDENTIALS_JSON не найден!")
+    exit(1)
+
+# Загружаем учетные данные Google
 try:
-    base64_credentials = os.getenv("CREDENTIALS_JSON")
-    if not base64_credentials:
-        raise ValueError("Переменная окружения CREDENTIALS_JSON отсутствует.")
-    credentials_json = base64.b64decode(base64_credentials).decode("utf-8")
     CREDENTIALS_JSON = json.loads(credentials_json)
-    print("✅ CREDENTIALS_JSON успешно загружен и декодирован!")
-except Exception as e:
-    print(f"❌ Ошибка декодирования CREDENTIALS_JSON: {e}")
-    raise e
+    logging.info("✅ CREDENTIALS_JSON успешно загружен!")
+except json.JSONDecodeError as e:
+    logging.error(f"❌ Ошибка декодирования CREDENTIALS_JSON: {e}")
+    exit(1)
 
+# Файл для хранения отправленных сообщений
 SENT_DATA_FILE = "sent_data.json"
 
-# Инициализация бота
+# Инициализация Telegram бота
 bot = Bot(token=TELEGRAM_TOKEN)
 
-# Логирование
-logging.basicConfig(level=logging.INFO)
-
-# Авторизация Google Sheets API
+# Авторизация в Google Sheets API
 def authorize_google_sheets():
-    creds = Credentials.from_service_account_info(
-        CREDENTIALS_JSON,
-        scopes=["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"],
-    )
-    client = gspread.authorize(creds)
-    sheet = client.open_by_key(SHEET_ID).sheet1
-    return sheet
+    try:
+        creds = Credentials.from_service_account_info(
+            CREDENTIALS_JSON,
+            scopes=["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        )
+        client = gspread.authorize(creds)
+        sheet = client.open_by_key(SHEET_ID).sheet1
+        logging.info("✅ Успешно подключено к Google Sheets!")
+        return sheet
+    except Exception as e:
+        logging.error(f"❌ Ошибка при подключении к Google Sheets: {e}")
+        exit(1)
 
-# Парсинг даты
+# Безопасное парсинг даты
 def safe_parse_date(date_value):
     if not date_value or date_value.strip() == "":
         return None
     try:
-        parsed_date = datetime.datetime.strptime(date_value.strip(), "%d.%m.%Y").date()
-        return parsed_date
+        return datetime.datetime.strptime(date_value.strip(), "%d.%m.%Y").date()
     except ValueError:
         return None
 
@@ -64,7 +79,7 @@ def load_sent_data():
     except (FileNotFoundError, json.JSONDecodeError):
         return {"sent_today": []}
 
-# Сохранение данных
+# Сохранение отправленных сообщений
 def save_sent_data(sent_data):
     with open(SENT_DATA_FILE, "w") as file:
         json.dump(sent_data, file, indent=4, default=str)
@@ -78,7 +93,7 @@ async def get_sheet_data():
         logging.error(f"❌ Ошибка при загрузке данных из Google Sheets: {e}")
         return []
 
-# Отправка сообщения в Telegram
+# Отправка сообщений в Telegram
 async def send_telegram_message(message):
     try:
         await bot.send_message(chat_id=CHAT_ID, text=message, parse_mode="Markdown")
