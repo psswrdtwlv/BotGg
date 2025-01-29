@@ -7,42 +7,36 @@ import gspread
 from google.oauth2.service_account import Credentials
 from telegram import Bot, error
 
-# Настройки
-SHEET_ID = "1Unw36FtjV6bXeO-15Qu2KpS8kjnkti3z2yXgsqHt1pk"
-CHAT_ID = "-1002459442462"  # Укажите ваш корректный Chat ID
-TELEGRAM_TOKEN = "7725100224:AAFkRGv7flv_k-FMbeOs0Jo1QzHY4Sbfj_E"
-CREDENTIALS_JSON = {
-    "type": "service_account",
-    "project_id": "botgg-448705",
-    "private_key_id": "53d98bb82ea437b72dcd94fc84e9bec212faf667",
-    "private_key": """-----BEGIN PRIVATE KEY-----
-MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDV83hySmC0EFIn
-VUpswlWyZmh2JRpcZp3L0Dq1R1t8q+573pcoXjhwbcLPnJ6nsinoJvcM78v/ye0t
-GJ0ehL0fgaROOagUnDHpoLg6nPeVotp92mUMo/HZQX9tigWIXxPTCU2NbALeUEVr
-5hEcCLx3DMVrzYbBNeaDTpLhYettXajRxlnFzlvZBLGxkFjxEIB7JA7KpOGxAYlv
-+U3h+cPvobxqofS4Z98yZKVvd9YpBbE2h+q8GW5mbg4L4mjI1zOUxK+9Fdr1C/xa
-FoxUdIHr3Yi0qNxKZxQ/lGgBq0mkZ5xMWkqmsDeLQHlyjB7sIc+Xmyo6AFtBL9XB
-eukzXdlLAgMBAAECggEABZ5MJmwvl+rpzWCfALYlu/aWfavBwnVrZWPFduc1ztNR
-...
------END PRIVATE KEY-----""",
-    "client_email": "botgg-479@botgg-448705.iam.gserviceaccount.com",
-    "client_id": "116709891945715813186",
-    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-    "token_uri": "https://oauth2.googleapis.com/token",
-    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-    "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/botgg-479@botgg-448705.iam.gserviceaccount.com",
-}
-
-SENT_DATA_FILE = "sent_data.json"
-
-# Инициализация бота
-bot = Bot(token=TELEGRAM_TOKEN)
-
 # Логирование
 logging.basicConfig(level=logging.INFO)
 
+# Получение переменных окружения
+SHEET_ID = os.getenv("SHEET_ID")
+CHAT_ID = os.getenv("CHAT_ID")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+
+# Загрузка данных из переменной окружения CREDENTIALS_JSON
+try:
+    CREDENTIALS_JSON = json.loads(os.getenv("CREDENTIALS_JSON"))
+    logging.info("✅ Переменная CREDENTIALS_JSON успешно загружена!")
+except Exception as e:
+    logging.error(f"❌ Ошибка загрузки CREDENTIALS_JSON: {e}")
+    CREDENTIALS_JSON = None
+
+SENT_DATA_FILE = "sent_data.json"
+
+# Инициализация Telegram Bot
+try:
+    bot = Bot(token=TELEGRAM_TOKEN)
+    logging.info("✅ Telegram Bot успешно инициализирован!")
+except Exception as e:
+    logging.error(f"❌ Ошибка инициализации Telegram Bot: {e}")
+    bot = None
+
 # Авторизация Google Sheets API
 def authorize_google_sheets():
+    if not CREDENTIALS_JSON:
+        raise ValueError("❌ Не удалось загрузить учетные данные для Google Sheets.")
     creds = Credentials.from_service_account_info(CREDENTIALS_JSON, scopes=["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"])
     client = gspread.authorize(creds)
     sheet = client.open_by_key(SHEET_ID).sheet1
@@ -53,8 +47,7 @@ def safe_parse_date(date_value):
     if not date_value or date_value.strip() == "":
         return None
     try:
-        parsed_date = datetime.datetime.strptime(date_value.strip(), "%d.%m.%Y").date()
-        return parsed_date
+        return datetime.datetime.strptime(date_value.strip(), "%d.%m.%Y").date()
     except ValueError:
         return None
 
@@ -86,9 +79,11 @@ async def get_sheet_data():
 # Отправка сообщения в Telegram
 async def send_telegram_message(message):
     try:
+        if not bot:
+            raise ValueError("Бот не инициализирован.")
         await bot.send_message(chat_id=CHAT_ID, text=message, parse_mode="Markdown")
         logging.info(f"✅ Сообщение отправлено: {message}")
-    except error.TelegramError as e:
+    except Exception as e:
         logging.error(f"❌ Ошибка при отправке сообщения: {e}")
 
 # Проверка и отправка уведомлений
