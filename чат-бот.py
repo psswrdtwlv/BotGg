@@ -13,11 +13,23 @@ SHEET_ID = os.getenv("SHEET_ID")
 CHAT_ID = os.getenv("CHAT_ID")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
+# Логирование
+logging.basicConfig(level=logging.INFO)
+
 # Декодирование CREDENTIALS_JSON из Base64
 try:
     credentials_base64 = os.getenv("CREDENTIALS_JSON")  # Получаем Base64 строку
     if not credentials_base64:
         raise ValueError("CREDENTIALS_JSON не задана!")
+
+    # 🔹 Отладочный вывод длины строки и первых символов
+    logging.info(f"DEBUG: CREDENTIALS_JSON length: {len(credentials_base64)}")
+    logging.info(f"DEBUG: CREDENTIALS_JSON first 50 chars: {credentials_base64[:50]}")
+
+    # Добавляем корректные `=` если строка битая
+    missing_padding = len(credentials_base64) % 4
+    if missing_padding:
+        credentials_base64 += "=" * (4 - missing_padding)
 
     # Декодируем Base64 строку в JSON
     credentials_json = base64.b64decode(credentials_base64).decode("utf-8")
@@ -38,9 +50,6 @@ except Exception as e:
     logging.error(f"❌ Ошибка при инициализации Telegram бота: {e}")
     raise
 
-# Логирование
-logging.basicConfig(level=logging.INFO)
-
 # Авторизация Google Sheets API
 def authorize_google_sheets():
     try:
@@ -52,16 +61,6 @@ def authorize_google_sheets():
     except Exception as e:
         logging.error(f"❌ Ошибка при подключении к Google Sheets: {e}")
         raise
-
-# Парсинг даты
-def safe_parse_date(date_value):
-    if not date_value or date_value.strip() == "":
-        return None
-    try:
-        parsed_date = datetime.datetime.strptime(date_value.strip(), "%d.%m.%Y").date()
-        return parsed_date
-    except ValueError:
-        return None
 
 # Чтение сохранённых данных
 def load_sent_data():
@@ -108,30 +107,24 @@ async def check_and_notify(data, sent_data):
         birth_date_raw = record.get("Дата рождения", "")
         hire_date_raw = record.get("Дата приема", "")
 
-        birth_date = safe_parse_date(birth_date_raw)
-        hire_date = safe_parse_date(hire_date_raw)
+        birth_date = datetime.datetime.strptime(birth_date_raw.strip(), "%d.%m.%Y").date() if birth_date_raw else None
+        hire_date = datetime.datetime.strptime(hire_date_raw.strip(), "%d.%m.%Y").date() if hire_date_raw else None
 
-        # Проверка дня рождения
         if birth_date and birth_date.day == today.day and birth_date.month == today.month:
             if name not in sent_data["sent_today"]:
                 birthdays.append(f"🎉 {name} ({birth_date.strftime('%d.%m.%Y')})")
                 new_notifications.append(name)
 
-        # Проверка годовщины работы
         if hire_date:
             months_worked = (today.year - hire_date.year) * 12 + today.month - hire_date.month
             if months_worked > 0 and (months_worked == 1 or months_worked % 3 == 0):
                 if name not in sent_data["sent_today"]:
                     years = months_worked // 12
                     months = months_worked % 12
-                    if years > 0:
-                        anniversary_text = f"{years} лет" if months == 0 else f"{years} лет {months} месяцев"
-                    else:
-                        anniversary_text = f"{months} месяцев"
+                    anniversary_text = f"{years} лет {months} месяцев" if months else f"{years} лет"
                     anniversaries.append(f"🎊 {name}: {anniversary_text}")
                     new_notifications.append(name)
 
-    # Формируем сообщение
     message_parts = []
     if birthdays:
         message_parts.append("🎂 **Сегодня День Рождения** 🎂\n" + "\n".join(birthdays))
