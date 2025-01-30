@@ -13,13 +13,14 @@ SHEET_ID = os.getenv("SHEET_ID")
 CHAT_ID = os.getenv("CHAT_ID")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
-# Декодирование CREDENTIALS_JSON
+# Декодирование CREDENTIALS_JSON из Base64
 try:
-    credentials_json = os.getenv("CREDENTIALS_JSON")  # Получаем JSON как строку
-    if not credentials_json:
+    credentials_base64 = os.getenv("CREDENTIALS_JSON")  # Получаем Base64 строку
+    if not credentials_base64:
         raise ValueError("CREDENTIALS_JSON не задана!")
-    
-    # Преобразуем строку JSON в Python-объект
+
+    # Декодируем Base64 строку в JSON
+    credentials_json = base64.b64decode(credentials_base64).decode("utf-8")
     CREDENTIALS_JSON = json.loads(credentials_json)
     logging.info("✅ CREDENTIALS_JSON успешно загружен!")
 except Exception as e:
