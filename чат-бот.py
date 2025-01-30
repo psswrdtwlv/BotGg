@@ -33,7 +33,6 @@ try:
 
     # Декодируем Base64 строку в JSON
     credentials_json = base64.b64decode(credentials_base64).decode("utf-8")
-    logging.info(f"DEBUG: Decoded CREDENTIALS_JSON: {credentials_json[:100]}...")  # Вывод первых 100 символов
     CREDENTIALS_JSON = json.loads(credentials_json)
     logging.info("✅ CREDENTIALS_JSON успешно загружен!")
 except Exception as e:
@@ -54,13 +53,16 @@ except Exception as e:
 # Авторизация Google Sheets API
 def authorize_google_sheets():
     try:
-        logging.info(f"DEBUG: Подключение к Google Sheets с SHEET_ID={SHEET_ID}")
-        creds = Credentials.from_service_account_info(CREDENTIALS_JSON, scopes=["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"])
-        logging.info("DEBUG: Credentials успешно созданы")
+        logging.info(f"DEBUG: Авторизация с SHEET_ID: {SHEET_ID}")
+        logging.info(f"DEBUG: Авторизация с client_email: {CREDENTIALS_JSON.get('client_email')}")
+
+        creds = Credentials.from_service_account_info(
+            CREDENTIALS_JSON,
+            scopes=["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        )
         client = gspread.authorize(creds)
-        logging.info("DEBUG: Авторизация через gspread успешно выполнена")
         sheet = client.open_by_key(SHEET_ID).sheet1
-        logging.info(f"✅ Успешное подключение к Google Sheets! SHEET_ID={SHEET_ID}")
+        logging.info("✅ Успешное подключение к Google Sheets!")
         return sheet
     except Exception as e:
         logging.error(f"❌ Ошибка при подключении к Google Sheets: {e}")
@@ -74,8 +76,7 @@ def load_sent_data():
             if "sent_today" not in data:
                 data["sent_today"] = []
             return data
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        logging.warning(f"⚠️ Проблема с чтением файла {SENT_DATA_FILE}: {e}")
+    except (FileNotFoundError, json.JSONDecodeError):
         return {"sent_today": []}
 
 # Сохранение данных
@@ -86,10 +87,9 @@ def save_sent_data(sent_data):
 # Получение данных из Google Sheets
 async def get_sheet_data():
     try:
-        logging.info("DEBUG: Попытка загрузить данные из Google Sheets")
         sheet = authorize_google_sheets()
         data = sheet.get_all_records()
-        logging.info(f"DEBUG: Успешно загружено {len(data)} записей из Google Sheets")
+        logging.info(f"DEBUG: Данные из Google Sheets: {data}")
         return data
     except Exception as e:
         logging.error(f"❌ Ошибка при загрузке данных из Google Sheets: {e}")
@@ -98,9 +98,8 @@ async def get_sheet_data():
 # Отправка сообщения в Telegram
 async def send_telegram_message(message):
     try:
-        logging.info(f"DEBUG: Отправка сообщения в Telegram: {message}")
         await bot.send_message(chat_id=CHAT_ID, text=message, parse_mode="Markdown")
-        logging.info("✅ Сообщение отправлено в Telegram!")
+        logging.info(f"✅ Сообщение отправлено: {message}")
     except error.TelegramError as e:
         logging.error(f"❌ Ошибка при отправке сообщения: {e}")
 
