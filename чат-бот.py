@@ -18,7 +18,7 @@ try:
     credentials_base64 = os.getenv("CREDENTIALS_JSON")
     if not credentials_base64:
         raise ValueError("CREDENTIALS_JSON не задана!")
-    credentials_json = base64.b64decode(credentials_base64).decode("utf-8")
+    credentials_json = credentials_json = os.getenv("CREDENTIALS_JSON") 
     CREDENTIALS_JSON = json.loads(credentials_json)
     logging.info("✅ CREDENTIALS_JSON успешно загружен!")
 except Exception as e:
