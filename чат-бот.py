@@ -5,7 +5,7 @@ import asyncio
 import datetime
 import gspread
 import base64
-import pytz                           # <-- ДЛЯ РАБОТЫ С ЧАСОВЫМИ ПОЯСАМИ
+import pytz
 from google.oauth2.service_account import Credentials
 from telegram import Bot, error
 
@@ -19,20 +19,17 @@ logging.basicConfig(level=logging.INFO)
 
 # Декодирование CREDENTIALS_JSON из Base64
 try:
-    credentials_base64 = os.getenv("CREDENTIALS_JSON")  # Получаем Base64 строку
+    credentials_base64 = os.getenv("CREDENTIALS_JSON")
     if not credentials_base64:
         raise ValueError("CREDENTIALS_JSON не задана!")
 
-    # 🔹 Отладочный вывод длины строки и первых символов
     logging.info(f"DEBUG: CREDENTIALS_JSON length: {len(credentials_base64)}")
     logging.info(f"DEBUG: CREDENTIALS_JSON first 50 chars: {credentials_base64[:50]}")
 
-    # Добавляем корректные `=` если строка битая
     missing_padding = len(credentials_base64) % 4
     if missing_padding:
         credentials_base64 += "=" * (4 - missing_padding)
 
-    # Декодируем Base64 строку в JSON
     credentials_json = base64.b64decode(credentials_base64).decode("utf-8")
     CREDENTIALS_JSON = json.loads(credentials_json)
     logging.info("✅ CREDENTIALS_JSON успешно загружен!")
@@ -40,10 +37,8 @@ except Exception as e:
     logging.error(f"❌ Ошибка при загрузке CREDENTIALS_JSON: {e}")
     raise
 
-# Файл для сохранённых данных
 SENT_DATA_FILE = "sent_data.json"
 
-# Инициализация Telegram бота
 try:
     bot = Bot(token=TELEGRAM_TOKEN)
     logging.info("✅ Telegram бот успешно инициализирован!")
@@ -56,7 +51,6 @@ def authorize_google_sheets():
     try:
         logging.info(f"DEBUG: Авторизация с SHEET_ID: {SHEET_ID}")
         logging.info(f"DEBUG: Авторизация с client_email: {CREDENTIALS_JSON.get('client_email')}")
-
         creds = Credentials.from_service_account_info(
             CREDENTIALS_JSON,
             scopes=["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -124,7 +118,7 @@ async def check_and_notify(data, sent_data):
                 birthdays.append(f"🎉 {name} ({birth_date.strftime('%d.%m.%Y')})")
                 new_notifications.append(name)
 
-        if hire_date:
+        if hire_date and hire_date.day == today.day and hire_date.month == today.month:
             months_worked = (today.year - hire_date.year) * 12 + today.month - hire_date.month
             if months_worked > 0 and (months_worked == 1 or months_worked % 3 == 0):
                 if name not in sent_data["sent_today"]:
