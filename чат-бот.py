@@ -5,6 +5,7 @@ import asyncio
 import datetime
 import gspread
 import base64
+import pytz                           # <-- ДЛЯ РАБОТЫ С ЧАСОВЫМИ ПОЯСАМИ
 from google.oauth2.service_account import Credentials
 from telegram import Bot, error
 
@@ -118,11 +119,13 @@ async def check_and_notify(data, sent_data):
         birth_date = datetime.datetime.strptime(birth_date_raw.strip(), "%d.%m.%Y").date() if birth_date_raw else None
         hire_date = datetime.datetime.strptime(hire_date_raw.strip(), "%d.%m.%Y").date() if hire_date_raw else None
 
+        # День рождения
         if birth_date and birth_date.day == today.day and birth_date.month == today.month:
             if name not in sent_data["sent_today"]:
                 birthdays.append(f"🎉 {name} ({birth_date.strftime('%d.%m.%Y')})")
                 new_notifications.append(name)
 
+        # Годовщина работы
         if hire_date:
             months_worked = (today.year - hire_date.year) * 12 + today.month - hire_date.month
             if months_worked > 0 and (months_worked == 1 or months_worked % 3 == 0):
@@ -143,23 +146,56 @@ async def check_and_notify(data, sent_data):
         full_message = "\n\n".join(message_parts)
         await send_telegram_message(full_message)
 
+    # Обновляем файл
     sent_data["sent_today"].extend(new_notifications)
     save_sent_data(sent_data)
 
-# Основной цикл проверки
+
+# ---- ДОБАВЛЯЕМ ЛОГИКУ ДЛЯ ЗАПУСКА РОВНО В 9:00 ПО МОСКВЕ, РАЗ В СУТКИ ----
+import pytz
+MOSCOW_TZ = pytz.timezone("Europe/Moscow")
+
 async def periodic_check():
+    """Раз в сутки в 9:00 по Москве выполняем проверку."""
     sent_data = load_sent_data()
+
     while True:
+        # 1) Вычисляем текущее время в Москве
+        now = datetime.datetime.now(MOSCOW_TZ)
+
+        # 2) Собираем дату-время сегодня в 9:00
+        target_time = now.replace(hour=9, minute=0, second=0, microsecond=0)
+
+        # Если сейчас уже позже 9:00, то следующий запуск — завтра
+        if now > target_time:
+            target_time += datetime.timedelta(days=1)
+
+        # Сколько ждать до 9:00
+        wait_seconds = (target_time - now).total_seconds()
+        h = int(wait_seconds // 3600)
+        m = int((wait_seconds % 3600) // 60)
+        logging.info(f"⏳ Ожидаем {h} ч {m} мин до 9:00 (MSK)...")
+
+        # 3) Ждём до 9:00
+        await asyncio.sleep(wait_seconds)
+
+        # Наступило 9:00 — делаем проверку
+        logging.info("🔹 Настало 9:00 по Москве, проверяем события...")
+
+        # Обнулим sent_today, чтобы не копилось за прошедшие дни
+        # (можно сложнее контролировать, но для простоты — ежедневный сброс)
+        sent_data["sent_today"] = []
+        save_sent_data(sent_data)
+
         try:
-            logging.info("🔹 Проверка новых событий...")
             data = await get_sheet_data()
             if data:
                 await check_and_notify(data, sent_data)
         except Exception as e:
             logging.error(f"❌ Ошибка: {e}")
 
-        logging.info("🔹 Ожидание 3 минуты перед следующей проверкой...")
-        await asyncio.sleep(180)
+        logging.info("🔹 Проверка завершена, следующий запуск завтра в 9:00 MSK.")
+        # Теперь цикл вернётся в начало, вычислит следующий target_time = текущая_дата + 1 день
 
 if __name__ == "__main__":
     asyncio.run(periodic_check())
