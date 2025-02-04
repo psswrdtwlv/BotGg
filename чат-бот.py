@@ -6,6 +6,7 @@ import datetime
 import gspread
 import base64
 import pytz
+import redis
 from google.oauth2.service_account import Credentials
 from telegram import Bot, error
 
@@ -13,18 +14,19 @@ from telegram import Bot, error
 SHEET_ID = os.getenv("SHEET_ID")
 CHAT_ID = os.getenv("CHAT_ID")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+REDIS_URL = os.getenv("REDIS_URL")
 
 # Логирование
 logging.basicConfig(level=logging.INFO)
+
+# Подключение к Redis
+redis_client = redis.from_url(REDIS_URL, decode_responses=True)
 
 # Декодирование CREDENTIALS_JSON из Base64
 try:
     credentials_base64 = os.getenv("CREDENTIALS_JSON")
     if not credentials_base64:
         raise ValueError("CREDENTIALS_JSON не задана!")
-
-    logging.info(f"DEBUG: CREDENTIALS_JSON length: {len(credentials_base64)}")
-    logging.info(f"DEBUG: CREDENTIALS_JSON first 50 chars: {credentials_base64[:50]}")
 
     missing_padding = len(credentials_base64) % 4
     if missing_padding:
@@ -37,8 +39,7 @@ except Exception as e:
     logging.error(f"❌ Ошибка при загрузке CREDENTIALS_JSON: {e}")
     raise
 
-SENT_DATA_FILE = "sent_data.json"
-
+# Подключение к Telegram API
 try:
     bot = Bot(token=TELEGRAM_TOKEN)
     logging.info("✅ Telegram бот успешно инициализирован!")
@@ -49,8 +50,6 @@ except Exception as e:
 # Авторизация Google Sheets API
 def authorize_google_sheets():
     try:
-        logging.info(f"DEBUG: Авторизация с SHEET_ID: {SHEET_ID}")
-        logging.info(f"DEBUG: Авторизация с client_email: {CREDENTIALS_JSON.get('client_email')}")
         creds = Credentials.from_service_account_info(
             CREDENTIALS_JSON,
             scopes=["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -63,28 +62,18 @@ def authorize_google_sheets():
         logging.error(f"❌ Ошибка при подключении к Google Sheets: {e}")
         raise
 
-# Чтение сохранённых данных
+# Функции работы с Redis
 def load_sent_data():
-    try:
-        with open(SENT_DATA_FILE, "r") as file:
-            data = json.load(file)
-            if "sent_today" not in data:
-                data["sent_today"] = []
-            return data
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {"sent_today": []}
+    sent_today = redis_client.get("sent_today")
+    return json.loads(sent_today) if sent_today else {"sent_today": []}
 
-# Сохранение данных
 def save_sent_data(sent_data):
-    with open(SENT_DATA_FILE, "w") as file:
-        json.dump(sent_data, file, indent=4, default=str)
+    redis_client.set("sent_today", json.dumps(sent_data))
 
 # Получение данных из Google Sheets
 async def get_sheet_data():
     try:
         sheet = authorize_google_sheets()
-        raw_data = sheet.get_all_values()
-        logging.info(f"DEBUG: Сырые данные из Google Sheets: {raw_data}")
         data = sheet.get_all_records()
         logging.info(f"DEBUG: Загружено {len(data)} записей из Google Sheets")
         return data
@@ -109,8 +98,8 @@ async def check_and_notify(data, sent_data):
 
     for record in data:
         name = record.get("Сотрудник", "Неизвестно")
-        birth_date_raw = record.get("Дата рождения", "").strip().replace("\xa0", " ")
-        hire_date_raw = record.get("Дата приема", "").strip().replace("\xa0", " ")
+        birth_date_raw = record.get("Дата рождения", "").strip()
+        hire_date_raw = record.get("Дата приема", "").strip()
 
         try:
             birth_date = datetime.datetime.strptime(birth_date_raw, "%d.%m.%Y").date() if birth_date_raw else None
@@ -118,8 +107,6 @@ async def check_and_notify(data, sent_data):
         except ValueError:
             logging.warning(f"⚠ Ошибка парсинга даты у {name}: {birth_date_raw} | {hire_date_raw}")
             continue
-
-        logging.info(f"Проверка ДР: {name}, дата рождения: {birth_date}")
 
         if birth_date and birth_date.day == today.day and birth_date.month == today.month:
             if name not in sent_data["sent_today"]:
@@ -149,23 +136,27 @@ async def check_and_notify(data, sent_data):
     sent_data["sent_today"].extend(new_notifications)
     save_sent_data(sent_data)
 
+# Часовой пояс
 MOSCOW_TZ = pytz.timezone("Europe/Moscow")
 
+# Запуск периодической проверки
 async def periodic_check():
-    sent_data = load_sent_data()
     while True:
+        sent_data = load_sent_data()
+        data = await get_sheet_data()
+        if data:
+            await check_and_notify(data, sent_data)
+
         now = datetime.datetime.now(MOSCOW_TZ)
         next_check = now.replace(hour=9, minute=0, second=0, microsecond=0)
         if now.hour >= 14:
             next_check += datetime.timedelta(days=1)
         elif now.hour >= 9:
             next_check = now.replace(hour=14, minute=0, second=0, microsecond=0)
+
         wait_seconds = (next_check - now).total_seconds()
         logging.info(f"⏳ Ожидание {wait_seconds // 3600:.0f} ч {wait_seconds % 3600 // 60:.0f} мин")
         await asyncio.sleep(wait_seconds)
-        data = await get_sheet_data()
-        if data:
-            await check_and_notify(data, sent_data)
 
 if __name__ == "__main__":
     asyncio.run(periodic_check())
