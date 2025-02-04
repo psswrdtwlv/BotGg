@@ -83,8 +83,10 @@ def save_sent_data(sent_data):
 async def get_sheet_data():
     try:
         sheet = authorize_google_sheets()
+        raw_data = sheet.get_all_values()
+        logging.info(f"DEBUG: Сырые данные из Google Sheets: {raw_data}")
         data = sheet.get_all_records()
-        logging.info(f"DEBUG: Данные из Google Sheets: {data}")
+        logging.info(f"DEBUG: Загружено {len(data)} записей из Google Sheets")
         return data
     except Exception as e:
         logging.error(f"❌ Ошибка при загрузке данных из Google Sheets: {e}")
@@ -107,11 +109,17 @@ async def check_and_notify(data, sent_data):
 
     for record in data:
         name = record.get("Сотрудник", "Неизвестно")
-        birth_date_raw = record.get("Дата рождения", "")
-        hire_date_raw = record.get("Дата приема", "")
+        birth_date_raw = record.get("Дата рождения", "").strip().replace("\xa0", " ")
+        hire_date_raw = record.get("Дата приема", "").strip().replace("\xa0", " ")
 
-        birth_date = datetime.datetime.strptime(birth_date_raw.strip(), "%d.%m.%Y").date() if birth_date_raw else None
-        hire_date = datetime.datetime.strptime(hire_date_raw.strip(), "%d.%m.%Y").date() if hire_date_raw else None
+        try:
+            birth_date = datetime.datetime.strptime(birth_date_raw, "%d.%m.%Y").date() if birth_date_raw else None
+            hire_date = datetime.datetime.strptime(hire_date_raw, "%d.%m.%Y").date() if hire_date_raw else None
+        except ValueError:
+            logging.warning(f"⚠ Ошибка парсинга даты у {name}: {birth_date_raw} | {hire_date_raw}")
+            continue
+
+        logging.info(f"Проверка ДР: {name}, дата рождения: {birth_date}")
 
         if birth_date and birth_date.day == today.day and birth_date.month == today.month:
             if name not in sent_data["sent_today"]:
