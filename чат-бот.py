@@ -20,7 +20,19 @@ REDIS_URL = os.getenv("REDIS_URL")
 logging.basicConfig(level=logging.INFO)
 
 # Подключение к Redis
-redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+try:
+    redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+    # Тестовое подключение к Redis
+    redis_client.set("test_key", "test_value")
+    test_value = redis_client.get("test_key")
+    if test_value == "test_value":
+        logging.info("✅ Redis подключен и работает корректно!")
+    else:
+        logging.error("❌ Redis подключен, но значение не удалось сохранить/получить!")
+        exit(1)
+except Exception as e:
+    logging.error(f"❌ Ошибка подключения к Redis: {e}")
+    exit(1)
 
 # Декодирование CREDENTIALS_JSON из Base64
 try:
