@@ -22,7 +22,6 @@ logging.basicConfig(level=logging.INFO)
 # Подключение к Redis
 try:
     redis_client = redis.from_url(REDIS_URL, decode_responses=True)
-    # Тестовое подключение к Redis
     redis_client.set("test_key", "test_value")
     test_value = redis_client.get("test_key")
     if test_value == "test_value":
@@ -39,11 +38,11 @@ try:
     credentials_base64 = os.getenv("CREDENTIALS_JSON")
     if not credentials_base64:
         raise ValueError("CREDENTIALS_JSON не задана!")
-
+    
     missing_padding = len(credentials_base64) % 4
     if missing_padding:
         credentials_base64 += "=" * (4 - missing_padding)
-
+    
     credentials_json = base64.b64decode(credentials_base64).decode("utf-8")
     CREDENTIALS_JSON = json.loads(credentials_json)
     logging.info("✅ CREDENTIALS_JSON успешно загружен!")
@@ -125,15 +124,13 @@ async def check_and_notify(data, sent_data):
                 birthdays.append(f"🎉 {name} ({birth_date.strftime('%d.%m.%Y')})")
                 new_notifications.append(name)
 
-        if hire_date and hire_date.day == today.day and hire_date.month == today.month:
-            months_worked = (today.year - hire_date.year) * 12 + today.month - hire_date.month
-            if months_worked > 0 and (months_worked == 1 or months_worked % 3 == 0):
-                if name not in sent_data["sent_today"]:
-                    years = months_worked // 12
-                    months = months_worked % 12
-                    anniversary_text = f"{years} лет {months} месяцев" if months else f"{years} лет"
-                    anniversaries.append(f"🎊 {name}: {anniversary_text}")
-                    new_notifications.append(name)
+        if hire_date and (today - hire_date).days % 90 == 0:
+            if name not in sent_data["sent_today"]:
+                years = (today - hire_date).days // 365
+                months = ((today - hire_date).days % 365) // 30
+                anniversary_text = f"{years} лет {months} месяцев" if months else f"{years} лет"
+                anniversaries.append(f"🎊 {name}: {anniversary_text}")
+                new_notifications.append(name)
 
     message_parts = []
     if birthdays:
@@ -148,27 +145,5 @@ async def check_and_notify(data, sent_data):
     sent_data["sent_today"].extend(new_notifications)
     save_sent_data(sent_data)
 
-# Часовой пояс
-MOSCOW_TZ = pytz.timezone("Europe/Moscow")
-
-# Запуск периодической проверки
-async def periodic_check():
-    while True:
-        sent_data = load_sent_data()
-        data = await get_sheet_data()
-        if data:
-            await check_and_notify(data, sent_data)
-
-        now = datetime.datetime.now(MOSCOW_TZ)
-        next_check = now.replace(hour=9, minute=0, second=0, microsecond=0)
-        if now.hour >= 14:
-            next_check += datetime.timedelta(days=1)
-        elif now.hour >= 9:
-            next_check = now.replace(hour=14, minute=0, second=0, microsecond=0)
-
-        wait_seconds = (next_check - now).total_seconds()
-        logging.info(f"⏳ Ожидание {wait_seconds // 3600:.0f} ч {wait_seconds % 3600 // 60:.0f} мин")
-        await asyncio.sleep(wait_seconds)
-
 if __name__ == "__main__":
-    asyncio.run(periodic_check())
+    asyncio.run(check_and_notify(get_sheet_data(), load_sent_data()))
