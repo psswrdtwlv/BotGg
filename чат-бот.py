@@ -143,5 +143,9 @@ async def check_and_notify(data, sent_data):
     sent_data["sent_today"].extend(new_notifications)
     save_sent_data(sent_data)
 
+async def main():
+    data = await get_sheet_data()
+    await check_and_notify(data, load_sent_data())
+
 if __name__ == "__main__":
-    asyncio.run(check_and_notify(get_sheet_data(), load_sent_data()))
+    asyncio.run(main())
