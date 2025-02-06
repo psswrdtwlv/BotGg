@@ -142,6 +142,8 @@ if __name__ == "__main__":
     async def main():
     data = await get_sheet_data()
     await check_and_notify(data, load_sent_data())
+    data = await get_sheet_data()
+    await check_and_notify(data, load_sent_data())
 
 if __name__ == "__main__":
     asyncio.run(main())
