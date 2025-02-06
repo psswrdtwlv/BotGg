@@ -141,12 +141,12 @@ async def check_and_notify(data, sent_data):
 async def main():
     try:
         logging.info("🚀 Запуск основного процесса")
-            data = await get_sheet_data()
-            await check_and_notify(data, load_sent_data())
+        data = await get_sheet_data()
+        await check_and_notify(data, load_sent_data())
 
 if __name__ == "__main__":
     try:
-    logging.info("🚀 Бот запущен и работает!")
-            asyncio.run(main())
+        logging.info("🚀 Бот запущен и работает!")
+        asyncio.run(main())
     except Exception as e:
         logging.error(f"❌ Ошибка в главном процессе: {e}")
