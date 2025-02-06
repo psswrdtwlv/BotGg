@@ -76,6 +76,7 @@ def authorize_google_sheets():
 # Функции работы с Redis
 def load_sent_data():
     sent_today = redis_client.get("sent_today")
+    logging.info(f"🔍 Загруженные данные из Redis: {sent_today}")
     return json.loads(sent_today) if sent_today else {"sent_today": []}
 
 def save_sent_data(sent_data):
@@ -86,7 +87,9 @@ async def get_sheet_data():
     try:
         sheet = authorize_google_sheets()
         data = sheet.get_all_records()
-        logging.info(f"DEBUG: Загружено {len(data)} записей из Google Sheets")
+        logging.info(f"✅ Загружено {len(data)} записей из Google Sheets")
+        for record in data[:5]:  # Выводим первые 5 строк для проверки
+            logging.info(f"Пример данных: {record}")
         return data
     except Exception as e:
         logging.error(f"❌ Ошибка при загрузке данных из Google Sheets: {e}")
@@ -95,8 +98,9 @@ async def get_sheet_data():
 # Отправка сообщения в Telegram
 async def send_telegram_message(message):
     try:
+        logging.info(f"📨 Отправка сообщения в Telegram: \n{message}")
         await bot.send_message(chat_id=CHAT_ID, text=message, parse_mode="Markdown")
-        logging.info(f"✅ Сообщение отправлено: {message}")
+        logging.info(f"✅ Сообщение отправлено")
     except error.TelegramError as e:
         logging.error(f"❌ Ошибка при отправке сообщения: {e}")
 
@@ -119,31 +123,25 @@ async def check_and_notify(data, sent_data):
             logging.warning(f"⚠ Ошибка парсинга даты у {name}: {birth_date_raw} | {hire_date_raw}")
             continue
 
-        if birth_date and birth_date.day == today.day and birth_date.month == today.month:
-            if name not in sent_data["sent_today"]:
-                birthdays.append(f"🎉 {name} ({birth_date.strftime('%d.%m.%Y')})")
+        if hire_date:
+            months_worked = (today - hire_date).days // 30
+            logging.info(f"🛠 {name} - Стаж: {months_worked} месяцев (Принят: {hire_date})")
+            if months_worked > 0 and (months_worked == 1 or months_worked % 3 == 0):
+                logging.info(f"✅ {name} проходит по условию (стаж {months_worked} мес.)")
+                anniversaries.append(f"🎊 {name}: {months_worked} месяцев")
                 new_notifications.append(name)
 
-        if hire_date and (today - hire_date).days % 90 == 0:
-            if name not in sent_data["sent_today"]:
-                years = (today - hire_date).days // 365
-                months = ((today - hire_date).days % 365) // 30
-                anniversary_text = f"{years} лет {months} месяцев" if months else f"{years} лет"
-                anniversaries.append(f"🎊 {name}: {anniversary_text}")
-                new_notifications.append(name)
-
-    message_parts = []
-    if birthdays:
-        message_parts.append("🎂 **Сегодня День Рождения** 🎂\n" + "\n".join(birthdays))
     if anniversaries:
-        message_parts.append("🏆 **Годовщина работы** 🏆\n" + "\n".join(anniversaries))
-
-    if message_parts:
-        full_message = "\n\n".join(message_parts)
+        full_message = "🏆 **Годовщина работы** 🏆\n" + "\n".join(anniversaries)
         await send_telegram_message(full_message)
-
+    
     sent_data["sent_today"].extend(new_notifications)
     save_sent_data(sent_data)
 
 if __name__ == "__main__":
-    asyncio.run(check_and_notify(get_sheet_data(), load_sent_data()))
+    async def main():
+    data = await get_sheet_data()
+    await check_and_notify(data, load_sent_data())
+
+if __name__ == "__main__":
+    asyncio.run(main())
