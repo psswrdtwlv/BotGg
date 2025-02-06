@@ -22,6 +22,7 @@ logging.basicConfig(level=logging.INFO)
 # Подключение к Redis
 try:
     redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+    # Тестовое подключение к Redis
     redis_client.set("test_key", "test_value")
     test_value = redis_client.get("test_key")
     if test_value == "test_value":
@@ -38,11 +39,11 @@ try:
     credentials_base64 = os.getenv("CREDENTIALS_JSON")
     if not credentials_base64:
         raise ValueError("CREDENTIALS_JSON не задана!")
-    
+
     missing_padding = len(credentials_base64) % 4
     if missing_padding:
         credentials_base64 += "=" * (4 - missing_padding)
-    
+
     credentials_json = base64.b64decode(credentials_base64).decode("utf-8")
     CREDENTIALS_JSON = json.loads(credentials_json)
     logging.info("✅ CREDENTIALS_JSON успешно загружен!")
@@ -76,7 +77,6 @@ def authorize_google_sheets():
 # Функции работы с Redis
 def load_sent_data():
     sent_today = redis_client.get("sent_today")
-    logging.info(f"🔍 Загруженные данные из Redis: {sent_today}")
     return json.loads(sent_today) if sent_today else {"sent_today": []}
 
 def save_sent_data(sent_data):
@@ -88,8 +88,6 @@ async def get_sheet_data():
         sheet = authorize_google_sheets()
         data = sheet.get_all_records()
         logging.info(f"✅ Загружено {len(data)} записей из Google Sheets")
-        for record in data[:5]:  # Выводим первые 5 строк для проверки
-            logging.info(f"Пример данных: {record}")
         return data
     except Exception as e:
         logging.error(f"❌ Ошибка при загрузке данных из Google Sheets: {e}")
@@ -98,9 +96,8 @@ async def get_sheet_data():
 # Отправка сообщения в Telegram
 async def send_telegram_message(message):
     try:
-        logging.info(f"📨 Отправка сообщения в Telegram: \n{message}")
         await bot.send_message(chat_id=CHAT_ID, text=message, parse_mode="Markdown")
-        logging.info(f"✅ Сообщение отправлено")
+        logging.info(f"✅ Сообщение отправлено: {message}")
     except error.TelegramError as e:
         logging.error(f"❌ Ошибка при отправке сообщения: {e}")
 
@@ -123,30 +120,28 @@ async def check_and_notify(data, sent_data):
             logging.warning(f"⚠ Ошибка парсинга даты у {name}: {birth_date_raw} | {hire_date_raw}")
             continue
 
-        if hire_date:
-            months_worked = (today - hire_date).days // 30
-            logging.info(f"🛠 {name} - Стаж: {months_worked} месяцев (Принят: {hire_date})")
+        if hire_date and hire_date.day == today.day and hire_date.month == today.month:
+            months_worked = (today.year - hire_date.year) * 12 + today.month - hire_date.month
             if months_worked > 0 and (months_worked == 1 or months_worked % 3 == 0):
-                logging.info(f"✅ {name} проходит по условию (стаж {months_worked} мес.)")
-                anniversaries.append(f"🎊 {name}: {months_worked} месяцев")
-                new_notifications.append(name)
+                if name not in sent_data["sent_today"]:
+                    years = months_worked // 12
+                    months = months_worked % 12
+                    anniversary_text = f"{years} лет {months} месяцев" if months else f"{years} лет"
+                    anniversaries.append(f"🎊 {name}: {anniversary_text}")
+                    new_notifications.append(name)
 
+    message_parts = []
+    if birthdays:
+        message_parts.append("🎂 **Сегодня День Рождения** 🎂\n" + "\n".join(birthdays))
     if anniversaries:
-        full_message = "🏆 **Годовщина работы** 🏆\n" + "\n".join(anniversaries)
+        message_parts.append("🏆 **Годовщина работы** 🏆\n" + "\n".join(anniversaries))
+
+    if message_parts:
+        full_message = "\n\n".join(message_parts)
         await send_telegram_message(full_message)
-    
+
     sent_data["sent_today"].extend(new_notifications)
     save_sent_data(sent_data)
 
-async def main():
-    try:
-        logging.info("🚀 Запуск основного процесса")
-        data = await get_sheet_data()
-        await check_and_notify(data, load_sent_data())
-
 if __name__ == "__main__":
-    try:
-        logging.info("🚀 Бот запущен и работает!")
-        asyncio.run(main())
-    except Exception as e:
-        logging.error(f"❌ Ошибка в главном процессе: {e}")
+    asyncio.run(check_and_notify(get_sheet_data(), load_sent_data()))
