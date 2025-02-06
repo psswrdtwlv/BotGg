@@ -120,9 +120,10 @@ async def check_and_notify(data, sent_data):
             logging.warning(f"⚠ Ошибка парсинга даты у {name}: {birth_date_raw} | {hire_date_raw}")
             continue
 
-        if hire_date and hire_date.day == today.day and hire_date.month == today.month:
+        if hire_date:
+            # Проверка годовщины стажа от числа до числа
             months_worked = (today.year - hire_date.year) * 12 + today.month - hire_date.month
-            if months_worked > 0 and (months_worked == 1 or months_worked % 3 == 0):
+            if hire_date.day == today.day and months_worked > 0 and (months_worked == 1 or months_worked % 3 == 0):
                 if name not in sent_data["sent_today"]:
                     years = months_worked // 12
                     months = months_worked % 12
@@ -144,8 +145,18 @@ async def check_and_notify(data, sent_data):
     save_sent_data(sent_data)
 
 async def main():
-    data = await get_sheet_data()
-    await check_and_notify(data, load_sent_data())
+    while True:
+        sent_data = load_sent_data()
+        data = await get_sheet_data()
+        await check_and_notify(data, sent_data)
+
+        # Ждем до следующего запуска
+        now = datetime.datetime.now()
+        next_check = now + datetime.timedelta(days=1)
+        next_check = next_check.replace(hour=9, minute=0, second=0, microsecond=0)
+        wait_time = (next_check - now).total_seconds()
+        logging.info(f"⏳ Ожидание до следующей проверки: {wait_time // 3600} часов")
+        await asyncio.sleep(wait_time)
 
 if __name__ == "__main__":
     asyncio.run(main())
