@@ -22,7 +22,6 @@ logging.basicConfig(level=logging.INFO)
 # Подключение к Redis
 try:
     redis_client = redis.from_url(REDIS_URL, decode_responses=True)
-    # Тестовое подключение к Redis
     redis_client.set("test_key", "test_value")
     test_value = redis_client.get("test_key")
     if test_value == "test_value":
@@ -145,18 +144,22 @@ async def check_and_notify(data, sent_data):
     save_sent_data(sent_data)
 
 async def main():
+    moscow_tz = pytz.timezone("Europe/Moscow")
     while True:
+        now = datetime.datetime.now(moscow_tz)
+        next_check = now.replace(hour=9, minute=0, second=0, microsecond=0)
+        if now.hour >= 14:
+            next_check += datetime.timedelta(days=1)
+        elif now.hour >= 9:
+            next_check = now.replace(hour=14, minute=0, second=0, microsecond=0)
+
+        wait_time = (next_check - now).total_seconds()
+        logging.info(f"⏳ Ожидание до следующей проверки: {wait_time // 3600} часов {wait_time % 3600 // 60} минут")
+        await asyncio.sleep(wait_time)
+
         sent_data = load_sent_data()
         data = await get_sheet_data()
         await check_and_notify(data, sent_data)
-
-        # Ждем до следующего запуска
-        now = datetime.datetime.now()
-        next_check = now + datetime.timedelta(days=1)
-        next_check = next_check.replace(hour=9, minute=0, second=0, microsecond=0)
-        wait_time = (next_check - now).total_seconds()
-        logging.info(f"⏳ Ожидание до следующей проверки: {wait_time // 3600} часов")
-        await asyncio.sleep(wait_time)
 
 if __name__ == "__main__":
     asyncio.run(main())
