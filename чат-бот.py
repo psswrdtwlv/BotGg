@@ -119,6 +119,13 @@ async def check_and_notify(data, sent_data):
             logging.warning(f"⚠ Ошибка парсинга даты у {name}: {birth_date_raw} | {hire_date_raw}")
             continue
 
+        if birth_date:
+            # Проверка дня рождения
+            if birth_date.day == today.day and birth_date.month == today.month:
+                if name not in sent_data["sent_today"]:
+                    birthdays.append(f"🎂 {name} ({today.year - birth_date.year} лет)")
+                    new_notifications.append(name)
+
         if hire_date:
             # Проверка годовщины стажа от числа до числа
             months_worked = (today.year - hire_date.year) * 12 + today.month - hire_date.month
