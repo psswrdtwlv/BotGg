@@ -94,72 +94,37 @@ async def get_sheet_data(sheet_gid):
         logging.error(f"❌ Ошибка при загрузке данных с вкладки {sheet_gid}: {e}")
         return []
 
-# Отправка сообщения в Telegram
-async def send_telegram_message(message):
-    try:
-        await bot.send_message(chat_id=CHAT_ID, text=message, parse_mode="Markdown")
-        logging.info(f"✅ Сообщение отправлено: {message}")
-    except error.TelegramError as e:
-        logging.error(f"❌ Ошибка при отправке сообщения: {e}")
+# Функция для правильного склонения "год"
+def format_years(years):
+    if 11 <= years % 100 <= 14:
+        return f"{years} лет"
+    last_digit = years % 10
+    if last_digit == 1:
+        return f"{years} год"
+    if 2 <= last_digit <= 4:
+        return f"{years} года"
+    return f"{years} лет"
 
-# Проверка и отправка ежедневных уведомлений
-async def check_and_notify(data, sent_data):
-    today = datetime.date.today()
-    new_notifications = []
-    birthdays = []
-    anniversaries = []
-
-    for record in data:
-        name = record.get("Сотрудник", "Неизвестно")
-        birth_date_raw = record.get("Дата рождения", "").strip()
-        hire_date_raw = record.get("Дата приема", "").strip()
-
-        try:
-            birth_date = datetime.datetime.strptime(birth_date_raw, "%d.%m.%Y").date() if birth_date_raw else None
-            hire_date = datetime.datetime.strptime(hire_date_raw, "%d.%m.%Y").date() if hire_date_raw else None
-        except ValueError:
-            logging.warning(f"⚠ Ошибка парсинга даты у {name}: {birth_date_raw} | {hire_date_raw}")
-            continue
-
-        if birth_date and birth_date.day == today.day and birth_date.month == today.month:
-            if name not in sent_data["sent_today"]:
-                birthdays.append(f"🎂 {name} ({today.year - birth_date.year} лет)")
-                new_notifications.append(name)
-
-        if hire_date and hire_date.day == today.day:
-            months_worked = (today.year - hire_date.year) * 12 + today.month - hire_date.month
-            if months_worked > 0 and (months_worked == 1 or months_worked % 3 == 0):
-                if name not in sent_data["sent_today"]:
-                    years = months_worked // 12
-                    months = months_worked % 12
-                    anniversary_text = f"{years} лет {months} месяцев" if months else f"{years} лет"
-                    anniversaries.append(f"🎊 {name}: {anniversary_text}")
-                    new_notifications.append(name)
-
-    if birthdays or anniversaries:
-        message_parts = []
-        if birthdays:
-            message_parts.append("🎂 **Сегодня День Рождения** 🎂\n" + "\n".join(birthdays))
-        if anniversaries:
-            message_parts.append("🏆 **Годовщина работы** 🏆\n" + "\n".join(anniversaries))
-        await send_telegram_message("\n\n".join(message_parts))
-
-    sent_data["sent_today"].extend(new_notifications)
-    save_sent_data(sent_data)
-
-# Отправка уведомлений о ДР в следующем месяце (25 числа)
+# Проверка и отправка уведомлений о ДР в следующем месяце (25 числа)
 async def check_and_notify_for_next_month():
     today = datetime.date.today()
     logging.info("🔍 Тестовая проверка загрузки вкладки 'Учёт АУП'")
 
-    MONTH_NAMES = {
-        1: "январе", 2: "феврале", 3: "марте", 4: "апреле", 5: "мае", 6: "июне",
-        7: "июле", 8: "августе", 9: "сентябре", 10: "октябре", 11: "ноябре", 12: "декабре"
+    MONTH_NAMES_NOMINATIVE = {
+        1: "январь", 2: "февраль", 3: "март", 4: "апрель", 5: "май", 6: "июнь",
+        7: "июль", 8: "август", 9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь"
+    }
+
+    MONTH_NAMES_GENITIVE = {
+        1: "января", 2: "февраля", 3: "марта", 4: "апреля", 5: "мая", 6: "июня",
+        7: "июля", 8: "августа", 9: "сентября", 10: "октября", 11: "ноября", 12: "декабря"
     }
 
     data = await get_sheet_data(SHEET_AUP_GID)
     next_month = today.month % 12 + 1
-    next_month_name = MONTH_NAMES[next_month]
+    next_month_nominative = MONTH_NAMES_NOMINATIVE[next_month]  # "март"
+    next_month_genitive = MONTH_NAMES_GENITIVE[next_month]  # "марта"
+
     birthdays_next_month = []
 
     for record in data:
@@ -173,17 +138,16 @@ async def check_and_notify_for_next_month():
             continue
 
         if birth_date and birth_date.month == next_month:
-            age = today.year - birth_date.year
-            birthdays_next_month.append(f"{name}, {birth_date.day} {next_month_name}, {age} лет, {position}")
+            age = format_years(today.year - birth_date.year)
+            birthdays_next_month.append(f"{name}, {birth_date.day} {next_month_genitive}, {age}, {position}")
 
     if birthdays_next_month:
-        await send_telegram_message(f"🎂 **Дни рождения в {next_month_name}** 🎂\n" + "\n".join(birthdays_next_month))
+        await send_telegram_message(f"🎂 **Дни рождения в {next_month_nominative}** 🎂\n" + "\n".join(birthdays_next_month))
 
 async def main():
     while True:
         sent_data = load_sent_data()
         data = await get_sheet_data(SHEET_UCHET_GID)
-        await check_and_notify(data, sent_data)
         await check_and_notify_for_next_month()
         await asyncio.sleep(86400)
 
