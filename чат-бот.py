@@ -138,23 +138,21 @@ async def main():
         now = datetime.datetime.now(moscow_tz)
         next_check = now.replace(hour=9, minute=0, second=0, microsecond=0)
 
-        if now.hour >= 14:  # Если уже прошло 14:00, ждем 9:00 следующего дня
+        if now.hour >= 14:
             next_check += datetime.timedelta(days=1)
-        elif now.hour >= 9:  # Если уже 9:00 прошло, ставим следующую проверку на 14:00
+        elif now.hour >= 9:
             next_check = now.replace(hour=14, minute=0, second=0, microsecond=0)
 
         wait_time = (next_check - now).total_seconds()
         logging.info(f"⏳ Ожидание до следующей проверки: {wait_time // 3600} часов {wait_time % 3600 // 60} минут")
 
-        await asyncio.sleep(wait_time)  # Ждём до следующей проверки
+        await asyncio.sleep(wait_time)
 
-        sent_data = {}  # Заглушка для возможного хранения отправленных данных
         data = await get_sheet_data(SHEET_UCHET_GID)
-
-        await send_telegram_message("📢 **Ежедневная проверка ДР и годовщин!**")  # Опциональное сообщение перед проверкой
-
-        # Запуск ежедневной проверки
-        await check_and_notify_for_next_month()  # Проверка 25 числа
+        
+        if data:
+            await send_telegram_message("📢 **Ежедневная проверка ДР и годовщин!**")
+            await check_and_notify_for_next_month()
 
 if __name__ == "__main__":
     asyncio.run(main())
