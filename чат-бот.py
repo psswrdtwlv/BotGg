@@ -74,7 +74,7 @@ def authorize_google_sheets():
         logging.error(f"❌ Ошибка при подключении к Google Sheets: {e}")
         raise
 
-# Функции работы с Redis (ВОССТАНОВЛЕННЫЕ)
+# Функции работы с Redis
 def load_sent_data():
     sent_today = redis_client.get("sent_today")
     return json.loads(sent_today) if sent_today else {"sent_today": []}
@@ -152,8 +152,14 @@ async def check_and_notify_for_next_month():
     today = datetime.date.today()
     logging.info("🔍 Тестовая проверка загрузки вкладки 'Учёт АУП'")
 
+    MONTH_NAMES = {
+        1: "январе", 2: "феврале", 3: "марте", 4: "апреле", 5: "мае", 6: "июне",
+        7: "июле", 8: "августе", 9: "сентябре", 10: "октябре", 11: "ноябре", 12: "декабре"
+    }
+
     data = await get_sheet_data(SHEET_AUP_GID)
     next_month = today.month % 12 + 1
+    next_month_name = MONTH_NAMES[next_month]
     birthdays_next_month = []
 
     for record in data:
@@ -168,33 +174,10 @@ async def check_and_notify_for_next_month():
 
         if birth_date and birth_date.month == next_month:
             age = today.year - birth_date.year
-            birthdays_next_month.append(f"{name}, {birth_date.day}.{birth_date.month}, {age} лет, {position}")
+            birthdays_next_month.append(f"{name}, {birth_date.day} {next_month_name}, {age} лет, {position}")
 
     if birthdays_next_month:
-        test_message = f"🎂 **ТЕСТОВОЕ СООБЩЕНИЕ: Дни рождения в {next_month} месяце** 🎂\n" + "\n".join(birthdays_next_month)
-        logging.info(test_message)
-        await send_telegram_message(test_message)
-
-    data = await get_sheet_data(SHEET_AUP_GID)
-    next_month = today.month % 12 + 1
-    birthdays_next_month = []
-
-    for record in data:
-        name = record.get("Сотрудник", "Неизвестно")
-        birth_date_raw = record.get("Дата рождения", "").strip()
-        position = record.get("Должность", "Неизвестно")
-
-        try:
-            birth_date = datetime.datetime.strptime(birth_date_raw, "%d.%m.%Y").date() if birth_date_raw else None
-        except ValueError:
-            continue
-
-        if birth_date and birth_date.month == next_month:
-            age = today.year - birth_date.year
-            birthdays_next_month.append(f"{name}, {birth_date.day}.{birth_date.month}, {age} лет, {position}")
-
-    if birthdays_next_month:
-        await send_telegram_message(f"🎂 **Дни рождения в {next_month} месяце** 🎂\n" + "\n".join(birthdays_next_month))
+        await send_telegram_message(f"🎂 **Дни рождения в {next_month_name}** 🎂\n" + "\n".join(birthdays_next_month))
 
 async def main():
     while True:
@@ -202,7 +185,7 @@ async def main():
         data = await get_sheet_data(SHEET_UCHET_GID)
         await check_and_notify(data, sent_data)
         await check_and_notify_for_next_month()
-        await asyncio.sleep(86400)  # Ждём 24 часа
+        await asyncio.sleep(86400)
 
 if __name__ == "__main__":
     asyncio.run(main())
