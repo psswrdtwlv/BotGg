@@ -94,6 +94,14 @@ async def get_sheet_data(sheet_gid):
         logging.error(f"❌ Ошибка при загрузке данных с вкладки {sheet_gid}: {e}")
         return []
 
+# Функция для отправки сообщений в Telegram
+async def send_telegram_message(message):
+    try:
+        await bot.send_message(chat_id=CHAT_ID, text=message, parse_mode="Markdown")
+        logging.info(f"✅ Сообщение отправлено: {message}")
+    except error.TelegramError as e:
+        logging.error(f"❌ Ошибка при отправке сообщения: {e}")
+
 # Функция для правильного склонения "год"
 def format_years(years):
     if 11 <= years % 100 <= 14:
