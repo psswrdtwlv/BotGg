@@ -12,6 +12,8 @@ from telegram import Bot, error
 
 # Настройки
 SHEET_ID = os.getenv("SHEET_ID")
+SHEET_UCHET_GID = int(os.getenv("SHEET_UCHET_GID", 0))  # ГИД листа "Учёт"
+SHEET_AUP_GID = int(os.getenv("SHEET_AUP_GID", 1))  # ГИД листа "Учёт АУП"
 CHAT_ID = os.getenv("CHAT_ID")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 REDIS_URL = os.getenv("REDIS_URL")
@@ -66,30 +68,22 @@ def authorize_google_sheets():
             scopes=["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         )
         client = gspread.authorize(creds)
-        sheet = client.open_by_key(SHEET_ID).sheet1
         logging.info("✅ Успешное подключение к Google Sheets!")
-        return sheet
+        return client
     except Exception as e:
         logging.error(f"❌ Ошибка при подключении к Google Sheets: {e}")
         raise
 
-# Функции работы с Redis
-def load_sent_data():
-    sent_today = redis_client.get("sent_today")
-    return json.loads(sent_today) if sent_today else {"sent_today": []}
-
-def save_sent_data(sent_data):
-    redis_client.set("sent_today", json.dumps(sent_data))
-
-# Получение данных из Google Sheets
-async def get_sheet_data():
+# Получение данных из вкладки Google Sheets
+async def get_sheet_data(sheet_gid):
     try:
-        sheet = authorize_google_sheets()
+        client = authorize_google_sheets()
+        sheet = client.open_by_key(SHEET_ID).get_worksheet_by_id(sheet_gid)
         data = sheet.get_all_records()
-        logging.info(f"✅ Загружено {len(data)} записей из Google Sheets")
+        logging.info(f"✅ Загружено {len(data)} записей с вкладки {sheet_gid}")
         return data
     except Exception as e:
-        logging.error(f"❌ Ошибка при загрузке данных из Google Sheets: {e}")
+        logging.error(f"❌ Ошибка при загрузке данных с вкладки {sheet_gid}: {e}")
         return []
 
 # Отправка сообщения в Telegram
@@ -100,7 +94,7 @@ async def send_telegram_message(message):
     except error.TelegramError as e:
         logging.error(f"❌ Ошибка при отправке сообщения: {e}")
 
-# Проверка и отправка уведомлений
+# Проверка и отправка ежедневных уведомлений
 async def check_and_notify(data, sent_data):
     today = datetime.date.today()
     new_notifications = []
@@ -119,17 +113,14 @@ async def check_and_notify(data, sent_data):
             logging.warning(f"⚠ Ошибка парсинга даты у {name}: {birth_date_raw} | {hire_date_raw}")
             continue
 
-        if birth_date:
-            # Проверка дня рождения
-            if birth_date.day == today.day and birth_date.month == today.month:
-                if name not in sent_data["sent_today"]:
-                    birthdays.append(f"🎂 {name} ({today.year - birth_date.year} лет)")
-                    new_notifications.append(name)
+        if birth_date and birth_date.day == today.day and birth_date.month == today.month:
+            if name not in sent_data["sent_today"]:
+                birthdays.append(f"🎂 {name} ({today.year - birth_date.year} лет)")
+                new_notifications.append(name)
 
-        if hire_date:
-            # Проверка годовщины стажа от числа до числа
+        if hire_date and hire_date.day == today.day:
             months_worked = (today.year - hire_date.year) * 12 + today.month - hire_date.month
-            if hire_date.day == today.day and months_worked > 0 and (months_worked == 1 or months_worked % 3 == 0):
+            if months_worked > 0 and (months_worked == 1 or months_worked % 3 == 0):
                 if name not in sent_data["sent_today"]:
                     years = months_worked // 12
                     months = months_worked % 12
@@ -137,36 +128,51 @@ async def check_and_notify(data, sent_data):
                     anniversaries.append(f"🎊 {name}: {anniversary_text}")
                     new_notifications.append(name)
 
-    message_parts = []
-    if birthdays:
-        message_parts.append("🎂 **Сегодня День Рождения** 🎂\n" + "\n".join(birthdays))
-    if anniversaries:
-        message_parts.append("🏆 **Годовщина работы** 🏆\n" + "\n".join(anniversaries))
-
-    if message_parts:
-        full_message = "\n\n".join(message_parts)
-        await send_telegram_message(full_message)
+    if birthdays or anniversaries:
+        message_parts = []
+        if birthdays:
+            message_parts.append("🎂 **Сегодня День Рождения** 🎂\n" + "\n".join(birthdays))
+        if anniversaries:
+            message_parts.append("🏆 **Годовщина работы** 🏆\n" + "\n".join(anniversaries))
+        await send_telegram_message("\n\n".join(message_parts))
 
     sent_data["sent_today"].extend(new_notifications)
-    save_sent_data(sent_data)
+    redis_client.set("sent_today", json.dumps(sent_data))
+
+# Отправка уведомлений о ДР в следующем месяце (25 числа)
+async def check_and_notify_for_next_month():
+    today = datetime.date.today()
+    if today.day != 25:
+        return
+
+    data = await get_sheet_data(SHEET_AUP_GID)
+    next_month = today.month % 12 + 1
+    birthdays_next_month = []
+
+    for record in data:
+        name = record.get("Сотрудник", "Неизвестно")
+        birth_date_raw = record.get("Дата рождения", "").strip()
+        position = record.get("Должность", "Неизвестно")
+
+        try:
+            birth_date = datetime.datetime.strptime(birth_date_raw, "%d.%m.%Y").date() if birth_date_raw else None
+        except ValueError:
+            continue
+
+        if birth_date and birth_date.month == next_month:
+            age = today.year - birth_date.year
+            birthdays_next_month.append(f"{name}, {birth_date.day}.{birth_date.month}, {age} лет, {position}")
+
+    if birthdays_next_month:
+        await send_telegram_message(f"🎂 **Дни рождения в {next_month} месяце** 🎂\n" + "\n".join(birthdays_next_month))
 
 async def main():
-    moscow_tz = pytz.timezone("Europe/Moscow")
     while True:
-        now = datetime.datetime.now(moscow_tz)
-        next_check = now.replace(hour=9, minute=0, second=0, microsecond=0)
-        if now.hour >= 14:
-            next_check += datetime.timedelta(days=1)
-        elif now.hour >= 9:
-            next_check = now.replace(hour=14, minute=0, second=0, microsecond=0)
-
-        wait_time = (next_check - now).total_seconds()
-        logging.info(f"⏳ Ожидание до следующей проверки: {wait_time // 3600} часов {wait_time % 3600 // 60} минут")
-        await asyncio.sleep(wait_time)
-
         sent_data = load_sent_data()
-        data = await get_sheet_data()
+        data = await get_sheet_data(SHEET_UCHET_GID)
         await check_and_notify(data, sent_data)
+        await check_and_notify_for_next_month()
+        await asyncio.sleep(86400)  # Ждём 24 часа
 
 if __name__ == "__main__":
     asyncio.run(main())
