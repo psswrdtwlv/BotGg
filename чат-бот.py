@@ -74,6 +74,14 @@ def authorize_google_sheets():
         logging.error(f"❌ Ошибка при подключении к Google Sheets: {e}")
         raise
 
+# Функции работы с Redis (ВОССТАНОВЛЕННЫЕ)
+def load_sent_data():
+    sent_today = redis_client.get("sent_today")
+    return json.loads(sent_today) if sent_today else {"sent_today": []}
+
+def save_sent_data(sent_data):
+    redis_client.set("sent_today", json.dumps(sent_data))
+
 # Получение данных из вкладки Google Sheets
 async def get_sheet_data(sheet_gid):
     try:
@@ -137,7 +145,7 @@ async def check_and_notify(data, sent_data):
         await send_telegram_message("\n\n".join(message_parts))
 
     sent_data["sent_today"].extend(new_notifications)
-    redis_client.set("sent_today", json.dumps(sent_data))
+    save_sent_data(sent_data)
 
 # Отправка уведомлений о ДР в следующем месяце (25 числа)
 async def check_and_notify_for_next_month():
