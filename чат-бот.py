@@ -13,7 +13,7 @@ from telegram import Bot, error
 # Настройки
 SHEET_ID = os.getenv("SHEET_ID")
 SHEET_UCHET_GID = int(os.getenv("SHEET_UCHET_GID", 0))  # ГИД листа "Учёт"
-SHEET_AUP_GID = int(os.getenv("SHEET_AUP_GID", 1))  # ГИД листа "Учёт АУП"
+SHEET_AUP_GID = int(os.getenv("SHEET_AUP_GID", 1393986014))  # ГИД листа "Учёт АУП"
 CHAT_ID = os.getenv("CHAT_ID")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 REDIS_URL = os.getenv("REDIS_URL")
