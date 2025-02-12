@@ -150,8 +150,30 @@ async def check_and_notify(data, sent_data):
 # Отправка уведомлений о ДР в следующем месяце (25 числа)
 async def check_and_notify_for_next_month():
     today = datetime.date.today()
-    if today.day != 25:
-        return
+    logging.info("🔍 Тестовая проверка загрузки вкладки 'Учёт АУП'")
+
+    data = await get_sheet_data(SHEET_AUP_GID)
+    next_month = today.month % 12 + 1
+    birthdays_next_month = []
+
+    for record in data:
+        name = record.get("Сотрудник", "Неизвестно")
+        birth_date_raw = record.get("Дата рождения", "").strip()
+        position = record.get("Должность", "Неизвестно")
+
+        try:
+            birth_date = datetime.datetime.strptime(birth_date_raw, "%d.%m.%Y").date() if birth_date_raw else None
+        except ValueError:
+            continue
+
+        if birth_date and birth_date.month == next_month:
+            age = today.year - birth_date.year
+            birthdays_next_month.append(f"{name}, {birth_date.day}.{birth_date.month}, {age} лет, {position}")
+
+    if birthdays_next_month:
+        test_message = f"🎂 **ТЕСТОВОЕ СООБЩЕНИЕ: Дни рождения в {next_month} месяце** 🎂\n" + "\n".join(birthdays_next_month)
+        logging.info(test_message)
+        await send_telegram_message(test_message)
 
     data = await get_sheet_data(SHEET_AUP_GID)
     next_month = today.month % 12 + 1
