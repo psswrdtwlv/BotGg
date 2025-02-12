@@ -74,14 +74,6 @@ def authorize_google_sheets():
         logging.error(f"❌ Ошибка при подключении к Google Sheets: {e}")
         raise
 
-# Функции работы с Redis
-def load_sent_data():
-    sent_today = redis_client.get("sent_today")
-    return json.loads(sent_today) if sent_today else {"sent_today": []}
-
-def save_sent_data(sent_data):
-    redis_client.set("sent_today", json.dumps(sent_data))
-
 # Получение данных из вкладки Google Sheets
 async def get_sheet_data(sheet_gid):
     try:
@@ -102,29 +94,13 @@ async def send_telegram_message(message):
     except error.TelegramError as e:
         logging.error(f"❌ Ошибка при отправке сообщения: {e}")
 
-# Функция для правильного склонения "год"
-def format_years(years):
-    if 11 <= years % 100 <= 14:
-        return f"{years} лет"
-    last_digit = years % 10
-    if last_digit == 1:
-        return f"{years} год"
-    if 2 <= last_digit <= 4:
-        return f"{years} года"
-    return f"{years} лет"
-
-# Проверка и отправка уведомлений о ДР в следующем месяце (только 25 числа)
+# Функция проверки и отправки ДР на следующий месяц (25 числа)
 async def check_and_notify_for_next_month():
     today = datetime.date.today()
-    if today.day != 25:  # Теперь проверка снова активна
+    if today.day != 25:  # Проверяем только 25 числа
         return
 
-    logging.info("🔍 Проверка дней рождения в следующем месяце (отправка только 25 числа)")
-
-    MONTH_NAMES_NOMINATIVE = {
-        1: "январь", 2: "февраль", 3: "март", 4: "апрель", 5: "май", 6: "июнь",
-        7: "июль", 8: "август", 9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь"
-    }
+    logging.info("🔍 Проверка дней рождения в следующем месяце (отправка 25 числа)")
 
     MONTH_NAMES_GENITIVE = {
         1: "января", 2: "февраля", 3: "марта", 4: "апреля", 5: "мая", 6: "июня",
@@ -133,8 +109,7 @@ async def check_and_notify_for_next_month():
 
     data = await get_sheet_data(SHEET_AUP_GID)
     next_month = today.month % 12 + 1
-    next_month_nominative = MONTH_NAMES_NOMINATIVE[next_month]  # "март"
-    next_month_genitive = MONTH_NAMES_GENITIVE[next_month]  # "марта"
+    next_month_name = MONTH_NAMES_GENITIVE[next_month]
 
     birthdays_next_month = []
 
@@ -149,18 +124,37 @@ async def check_and_notify_for_next_month():
             continue
 
         if birth_date and birth_date.month == next_month:
-            age = format_years(today.year - birth_date.year)
-            birthdays_next_month.append(f"{name}, {birth_date.day} {next_month_genitive}, {age}, {position}")
+            age = today.year - birth_date.year
+            birthdays_next_month.append(f"{name}, {birth_date.day} {next_month_name}, {age} лет, {position}")
 
     if birthdays_next_month:
-        await send_telegram_message(f"🎂 **Дни рождения в {next_month_nominative}** 🎂\n" + "\n".join(birthdays_next_month))
+        await send_telegram_message(f"🎂 **Дни рождения в {next_month_name}** 🎂\n" + "\n".join(birthdays_next_month))
 
+# Основной цикл, выполняющий проверку в 9:00 и 14:00 (по Москве)
 async def main():
+    moscow_tz = pytz.timezone("Europe/Moscow")
+
     while True:
-        sent_data = load_sent_data()
+        now = datetime.datetime.now(moscow_tz)
+        next_check = now.replace(hour=9, minute=0, second=0, microsecond=0)
+
+        if now.hour >= 14:  # Если уже прошло 14:00, ждем 9:00 следующего дня
+            next_check += datetime.timedelta(days=1)
+        elif now.hour >= 9:  # Если уже 9:00 прошло, ставим следующую проверку на 14:00
+            next_check = now.replace(hour=14, minute=0, second=0, microsecond=0)
+
+        wait_time = (next_check - now).total_seconds()
+        logging.info(f"⏳ Ожидание до следующей проверки: {wait_time // 3600} часов {wait_time % 3600 // 60} минут")
+
+        await asyncio.sleep(wait_time)  # Ждём до следующей проверки
+
+        sent_data = {}  # Заглушка для возможного хранения отправленных данных
         data = await get_sheet_data(SHEET_UCHET_GID)
-        await check_and_notify_for_next_month()
-        await asyncio.sleep(86400)
+
+        await send_telegram_message("📢 **Ежедневная проверка ДР и годовщин!**")  # Опциональное сообщение перед проверкой
+
+        # Запуск ежедневной проверки
+        await check_and_notify_for_next_month()  # Проверка 25 числа
 
 if __name__ == "__main__":
     asyncio.run(main())
