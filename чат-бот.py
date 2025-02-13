@@ -74,7 +74,7 @@ def authorize_google_sheets():
         logging.error(f"❌ Ошибка при подключении к Google Sheets: {e}")
         raise
 
-# Получение данных из вкладки Google Sheets
+# Получение данных из Google Sheets
 async def get_sheet_data(sheet_gid):
     try:
         client = authorize_google_sheets()
@@ -94,65 +94,71 @@ async def send_telegram_message(message):
     except error.TelegramError as e:
         logging.error(f"❌ Ошибка при отправке сообщения: {e}")
 
-# Функция проверки и отправки ДР на следующий месяц (25 числа)
-async def check_and_notify_for_next_month():
+# Проверка дней рождения и годовщин (ежедневно)
+async def check_birthdays_and_anniversaries():
     today = datetime.date.today()
-    if today.day != 25:  # Проверяем только 25 числа
-        return
-
-    logging.info("🔍 Проверка дней рождения в следующем месяце (отправка 25 числа)")
-
-    MONTH_NAMES_GENITIVE = {
-        1: "января", 2: "февраля", 3: "марта", 4: "апреля", 5: "мая", 6: "июня",
-        7: "июля", 8: "августа", 9: "сентября", 10: "октября", 11: "ноября", 12: "декабря"
-    }
-
-    data = await get_sheet_data(SHEET_AUP_GID)
-    next_month = today.month % 12 + 1
-    next_month_name = MONTH_NAMES_GENITIVE[next_month]
-
-    birthdays_next_month = []
-
+    data = await get_sheet_data(SHEET_UCHET_GID)
+    
+    birthdays_today = []
+    anniversaries_today = []
+    
     for record in data:
         name = record.get("Сотрудник", "Неизвестно")
         birth_date_raw = record.get("Дата рождения", "").strip()
-        position = record.get("Должность", "Неизвестно")
+        hire_date_raw = record.get("Дата приема", "").strip()
+        
+        try:
+            birth_date = datetime.datetime.strptime(birth_date_raw, "%d.%m.%Y").date() if birth_date_raw else None
+            hire_date = datetime.datetime.strptime(hire_date_raw, "%d.%m.%Y").date() if hire_date_raw else None
+        except ValueError:
+            continue
+        
+        if birth_date and birth_date.day == today.day and birth_date.month == today.month:
+            age = today.year - birth_date.year
+            birthdays_today.append(f"{name}, {age} лет")
+        
+        if hire_date:
+            months_diff = (today.year - hire_date.year) * 12 + today.month - hire_date.month
+            if hire_date.day == today.day and (months_diff == 1 or months_diff % 3 == 0):
+                anniversaries_today.append(f"{name}, {months_diff} мес. стажа")
+    
+    if birthdays_today:
+        await send_telegram_message(f"🎂 **Сегодня день рождения:** 🎂\n" + "\n".join(birthdays_today))
+    if anniversaries_today:
+        await send_telegram_message(f"🎉 **Годовщины стажа:** 🎉\n" + "\n".join(anniversaries_today))
 
+# Проверка дней рождения на следующий месяц (25 числа)
+async def check_birthdays_next_month():
+    today = datetime.date.today()
+    if today.day != 25:
+        return
+    
+    next_month = today.month % 12 + 1
+    data = await get_sheet_data(SHEET_AUP_GID)
+    birthdays_next_month = []
+    
+    for record in data:
+        name = record.get("Сотрудник", "Неизвестно")
+        birth_date_raw = record.get("Дата рождения", "").strip()
+        
         try:
             birth_date = datetime.datetime.strptime(birth_date_raw, "%d.%m.%Y").date() if birth_date_raw else None
         except ValueError:
             continue
-
+        
         if birth_date and birth_date.month == next_month:
             age = today.year - birth_date.year
-            birthdays_next_month.append(f"{name}, {birth_date.day} {next_month_name}, {age} лет, {position}")
-
+            birthdays_next_month.append(f"{name}, {birth_date.day}.{next_month}, {age} лет")
+    
     if birthdays_next_month:
-        await send_telegram_message(f"🎂 **Дни рождения в {next_month_name}** 🎂\n" + "\n".join(birthdays_next_month))
+        await send_telegram_message(f"🎂 **Дни рождения в следующем месяце:** 🎂\n" + "\n".join(birthdays_next_month))
 
-# Основной цикл, выполняющий проверку в 9:00 и 14:00 (по Москве)
+# Основной цикл
 async def main():
-    moscow_tz = pytz.timezone("Europe/Moscow")
-
     while True:
-        now = datetime.datetime.now(moscow_tz)
-        next_check = now.replace(hour=9, minute=0, second=0, microsecond=0)
-
-        if now.hour >= 14:
-            next_check += datetime.timedelta(days=1)
-        elif now.hour >= 9:
-            next_check = now.replace(hour=14, minute=0, second=0, microsecond=0)
-
-        wait_time = (next_check - now).total_seconds()
-        logging.info(f"⏳ Ожидание до следующей проверки: {wait_time // 3600} часов {wait_time % 3600 // 60} минут")
-
-        await asyncio.sleep(wait_time)
-
-        data = await get_sheet_data(SHEET_UCHET_GID)
-        
-        if data:
-            await send_telegram_message("📢 **Ежедневная проверка ДР и годовщин!**")
-            await check_and_notify_for_next_month()
+        await check_birthdays_and_anniversaries()
+        await check_birthdays_next_month()
+        await asyncio.sleep(86400)  # Проверка раз в сутки
 
 if __name__ == "__main__":
     asyncio.run(main())
