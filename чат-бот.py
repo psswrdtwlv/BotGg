@@ -94,6 +94,17 @@ async def send_telegram_message(message):
     except error.TelegramError as e:
         logging.error(f"❌ Ошибка при отправке сообщения: {e}")
 
+# Функция преобразования месяцев в формат "X лет Y мес."
+def format_tenure(months):
+    years = months // 12
+    remaining_months = months % 12
+    if years > 0 and remaining_months > 0:
+        return f"{years} г. {remaining_months} мес."
+    elif years > 0:
+        return f"{years} г."
+    else:
+        return f"{remaining_months} мес."
+
 # Проверка дней рождения и годовщин (ежедневно)
 async def check_birthdays_and_anniversaries():
     today = datetime.date.today()
@@ -120,7 +131,8 @@ async def check_birthdays_and_anniversaries():
         if hire_date:
             months_diff = (today.year - hire_date.year) * 12 + today.month - hire_date.month
             if hire_date.day == today.day and (months_diff == 1 or months_diff % 3 == 0):
-                anniversaries_today.append(f"{name}, {months_diff} мес. стажа")
+                formatted_tenure = format_tenure(months_diff)
+                anniversaries_today.append(f"{name}, {formatted_tenure} стажа")
     
     if birthdays_today:
         await send_telegram_message(f"🎂 **Сегодня день рождения:** 🎂\n" + "\n".join(birthdays_today))
