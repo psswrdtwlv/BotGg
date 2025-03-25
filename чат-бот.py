@@ -103,36 +103,30 @@ async def check_birthdays_and_anniversaries():
     tz = pytz.timezone("Europe/Moscow")
     today = datetime.datetime.now(tz).date()
 
-    # Загружаем обе таблицы
     data_uchet = await get_sheet_data(SHEET_UCHET_GID)
     data_aup = await get_sheet_data(SHEET_AUP_GID)
 
     birthdays_today = []
     anniversaries_today = []
 
-    # --- Проверка "Учёт" (есть стаж)
+    # --- Проверка "Учёт" (дни рождения + стаж)
     for record in data_uchet:
         name = record.get("Сотрудник", "Неизвестно")
-
-        # Дата рождения
         birth_raw = record.get("Дата рождения")
         birth_raw = birth_raw.strip() if isinstance(birth_raw, str) else ""
-        birth_date = None
-        if birth_raw:
-            try:
-                birth_date = datetime.datetime.strptime(birth_raw, "%d.%m.%Y").date()
-            except ValueError:
-                pass
-
-        # Дата приёма
         hire_raw = record.get("Дата приема")
         hire_raw = hire_raw.strip() if isinstance(hire_raw, str) else ""
+
+        birth_date = None
         hire_date = None
-        if hire_raw:
-            try:
+
+        try:
+            if birth_raw:
+                birth_date = datetime.datetime.strptime(birth_raw, "%d.%m.%Y").date()
+            if hire_raw:
                 hire_date = datetime.datetime.strptime(hire_raw, "%d.%m.%Y").date()
-            except ValueError:
-                pass
+        except ValueError:
+            continue
 
         if birth_date and birth_date.day == today.day and birth_date.month == today.month:
             age = today.year - birth_date.year
@@ -154,7 +148,7 @@ async def check_birthdays_and_anniversaries():
             if birth_date.day == today.day and birth_date.month == today.month:
                 age = today.year - birth_date.year
                 birthdays_today.append(f"{name}, {age} лет")
-        except:
+        except Exception:
             continue
 
     # --- Отправка
@@ -163,7 +157,7 @@ async def check_birthdays_and_anniversaries():
     if anniversaries_today:
         await send_telegram_message("🎉 *Годовщины стажа:* 🎉\n" + "\n".join(anniversaries_today))
 
-# === Дни рождения следующего месяца ===
+# === Проверка дней рождения в следующем месяце (только с "АУП") ===
 async def check_birthdays_next_month():
     tz = pytz.timezone("Europe/Moscow")
     today = datetime.datetime.now(tz).date()
@@ -205,6 +199,12 @@ async def wait_until(hour, minute, tz_name="Europe/Moscow"):
 
 # === Запуск ===
 async def main():
+    # ⚡ Моментальный запуск при старте
+    logging.info("🚀 Моментальный запуск проверки при старте контейнера")
+    await check_birthdays_and_anniversaries()
+    await check_birthdays_next_month()
+
+    # Далее — режим ожидания до 9:00
     await wait_until(9, 0)
 
 if __name__ == "__main__":
