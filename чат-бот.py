@@ -110,7 +110,10 @@ async def check_birthdays_and_anniversaries():
     tz = pytz.timezone("Europe/Moscow")
     today = datetime.datetime.now(tz).date()
     
-    data = await get_sheet_data(SHEET_UCHET_GID)
+    # Загружаем данные с двух листов
+    data_uchet = await get_sheet_data(SHEET_UCHET_GID)
+    data_aup = await get_sheet_data(SHEET_AUP_GID)
+    data = data_uchet + data_aup
 
     birthdays_today = []
     anniversaries_today = []
