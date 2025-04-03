@@ -109,13 +109,10 @@ async def check_birthdays_and_anniversaries():
     birthdays_today = []
     anniversaries_today = []
 
-    # --- Проверка "Учёт" (дни рождения + стаж)
     for record in data_uchet:
         name = record.get("Сотрудник", "Неизвестно")
-        birth_raw = record.get("Дата рождения")
-        birth_raw = birth_raw.strip() if isinstance(birth_raw, str) else ""
-        hire_raw = record.get("Дата приема")
-        hire_raw = hire_raw.strip() if isinstance(hire_raw, str) else ""
+        birth_raw = record.get("Дата рождения", "").strip()
+        hire_raw = record.get("Дата приема", "").strip()
 
         birth_date = None
         hire_date = None
@@ -132,32 +129,32 @@ async def check_birthdays_and_anniversaries():
             age = today.year - birth_date.year
             birthdays_today.append(f"{name}, {age} лет")
 
-        if hire_date and hire_date.day == today.day and hire_date.month == today.month:
+        if hire_date:
             months_diff = (today.year - hire_date.year) * 12 + today.month - hire_date.month
-            if months_diff == 1 or months_diff % 3 == 0:
+            if months_diff > 0 and months_diff % 3 == 0 and today.day >= hire_date.day:
                 formatted = format_tenure(months_diff)
                 anniversaries_today.append(f"{name}, {formatted} стажа")
+                logging.info(f"🎯 Годовщина: {name}, {formatted}, дата приёма: {hire_date}")
+            else:
+                logging.debug(f"🔕 Пропущено: {name}, месяцев: {months_diff}, дата приёма: {hire_date}, сегодня: {today}")
 
-    # --- Проверка "Учёт АУП" (только дни рождения)
     for record in data_aup:
         name = record.get("Сотрудник", "Неизвестно")
-        birth_raw = record.get("Дата рождения")
-        birth_raw = birth_raw.strip() if isinstance(birth_raw, str) else ""
+        birth_raw = record.get("Дата рождения", "").strip()
         try:
             birth_date = datetime.datetime.strptime(birth_raw, "%d.%m.%Y").date()
             if birth_date.day == today.day and birth_date.month == today.month:
                 age = today.year - birth_date.year
                 birthdays_today.append(f"{name}, {age} лет")
-        except Exception:
+        except:
             continue
 
-    # --- Отправка
     if birthdays_today:
         await send_telegram_message("🎂 *Сегодня день рождения:* 🎂\n" + "\n".join(birthdays_today))
     if anniversaries_today:
         await send_telegram_message("🎉 *Годовщины стажа:* 🎉\n" + "\n".join(anniversaries_today))
 
-# === Проверка дней рождения в следующем месяце (только с "АУП") ===
+# === Проверка дней рождения в следующем месяце ===
 async def check_birthdays_next_month():
     tz = pytz.timezone("Europe/Moscow")
     today = datetime.datetime.now(tz).date()
@@ -170,8 +167,7 @@ async def check_birthdays_next_month():
 
     for record in data:
         name = record.get("Сотрудник", "Неизвестно")
-        birth_raw = record.get("Дата рождения")
-        birth_raw = birth_raw.strip() if isinstance(birth_raw, str) else ""
+        birth_raw = record.get("Дата рождения", "").strip()
         try:
             birth_date = datetime.datetime.strptime(birth_raw, "%d.%m.%Y").date()
             if birth_date.month == next_month:
@@ -199,12 +195,9 @@ async def wait_until(hour, minute, tz_name="Europe/Moscow"):
 
 # === Запуск ===
 async def main():
-    # ⚡ Моментальный запуск при старте
     logging.info("🚀 Моментальный запуск проверки при старте контейнера")
     await check_birthdays_and_anniversaries()
     await check_birthdays_next_month()
-
-    # Далее — режим ожидания до 9:00
     await wait_until(9, 0)
 
 if __name__ == "__main__":
