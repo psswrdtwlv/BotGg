@@ -129,14 +129,12 @@ async def check_birthdays_and_anniversaries():
             age = today.year - birth_date.year
             birthdays_today.append(f"{name}, {age} лет")
 
-        if hire_date:
+        if hire_date and hire_date.day == today.day:
             months_diff = (today.year - hire_date.year) * 12 + today.month - hire_date.month
-            if months_diff > 0 and months_diff % 3 == 0 and today.day >= hire_date.day:
+            if months_diff > 0 and (months_diff == 1 or months_diff % 3 == 0):
                 formatted = format_tenure(months_diff)
                 anniversaries_today.append(f"{name}, {formatted} стажа")
                 logging.info(f"🎯 Годовщина: {name}, {formatted}, дата приёма: {hire_date}")
-            else:
-                logging.debug(f"🔕 Пропущено: {name}, месяцев: {months_diff}, дата приёма: {hire_date}, сегодня: {today}")
 
     for record in data_aup:
         name = record.get("Сотрудник", "Неизвестно")
